@@ -5,6 +5,8 @@ import (
 	"go/token"
 	"regexp"
 	"strings"
+
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/utils"
 )
 
 var genCodeRe = regexp.MustCompile(`(?i)^\s*//\s*Code generated`)
@@ -24,7 +26,7 @@ type FuncInfo struct {
 func ExtractFunctions(u FileUnit, maxFuncLines, minFuncLines int) (out []FuncInfo) {
 	// Skip generated (first 5 lines)
 	headLines := strings.Split(u.Src, "\n")
-	head := strings.Join(headLines[:minInt(5, len(headLines))], "\n")
+	head := strings.Join(headLines[:utils.Min(5, len(headLines))], "\n")
 	if genCodeRe.MatchString(head) {
 		return nil
 	}
@@ -93,10 +95,4 @@ func ensureTrailingNL(s string) string {
 		return s
 	}
 	return s + "\n"
-}
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

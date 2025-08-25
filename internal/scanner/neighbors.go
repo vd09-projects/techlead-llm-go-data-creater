@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/model"
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/utils"
 )
 
 func BuildNeighbors(fileLines map[string][]string, repoRoot, relPath string, startLine, endLine, before, after int) []model.Neighbor {
@@ -33,7 +34,7 @@ func BuildNeighbors(fileLines map[string][]string, repoRoot, relPath string, sta
 
 	var out []model.Neighbor
 	if before > 0 {
-		s := max(1, startLine-before)
+		s := utils.Max(1, startLine-before)
 		e := startLine - 1
 		if e >= s && (e-s+1) <= 30 {
 			snip := strings.Join(lines[s-1:e], "\n")
@@ -44,7 +45,7 @@ func BuildNeighbors(fileLines map[string][]string, repoRoot, relPath string, sta
 	}
 	if after > 0 {
 		s := endLine + 1
-		e := min(len(lines), endLine+after)
+		e := utils.Min(len(lines), endLine+after)
 		if e >= s && (e-s+1) <= 30 {
 			snip := strings.Join(lines[s-1:e], "\n")
 			if strings.TrimSpace(snip) != "" {
@@ -53,11 +54,4 @@ func BuildNeighbors(fileLines map[string][]string, repoRoot, relPath string, sta
 		}
 	}
 	return out
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

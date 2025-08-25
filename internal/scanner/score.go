@@ -1,10 +1,11 @@
 package scanner
 
 import (
-	"math"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/utils"
 )
 
 var specialAPINames = []string{"New", "With", "Sugar", "Desugar", "Named", "WithOptions"}
@@ -66,35 +67,5 @@ func ComputeScore(name string, exported bool, path string, lineCount int, isGene
 	if isGenerated {
 		score -= 0.50
 	}
-	return clamp01(score)
-}
-
-// func isExported(name string) bool {
-// 	if name == "" {
-// 		return false
-// 	}
-// 	r := rune(name[0])
-// 	return r >= 'A' && r <= 'Z'
-// }
-
-func normalizeVisibilityPtr(exported bool) *string {
-	v := "unexported"
-	if exported {
-		v = "exported"
-	}
-	return &v
-}
-
-func round2(f float64) float64 {
-	return math.Round(f*100) / 100
-}
-
-func clamp01(f float64) float64 {
-	if f < 0 {
-		return 0
-	}
-	if f > 1 {
-		return 1
-	}
-	return f
+	return utils.Clamp01(score)
 }

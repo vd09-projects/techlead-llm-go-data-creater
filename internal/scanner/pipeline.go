@@ -6,6 +6,7 @@ import (
 
 	cg "github.com/vd09-projects/techlead-llm-go-data-creater/internal/callgraph"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/model"
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/utils"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -115,7 +116,7 @@ func Run(opts Options) ([]model.Record, error) {
 			// selection (score + reason + visibility)
 			if opts.Fields["selection"] {
 				lineCount := fn.EndLine - fn.StartLine + 1
-				faninNorm := minFloat(1.0, float64(fanin[fn.Name])/50.0)
+				faninNorm := utils.Min(1.0, float64(fanin[fn.Name])/50.0)
 				reason := ClassifyReason(fn.Name, fn.Path, false)
 				if coreRe.MatchString(strings.ToLower(fn.Path)) && reason == "other" {
 					reason = "core"
@@ -128,7 +129,7 @@ func Run(opts Options) ([]model.Record, error) {
 				rec.Selection = &model.Selection{
 					Visibility: vis,
 					Reason:     reason,
-					Score:      round2(score),
+					Score:      utils.RoundN(score, 2),
 				}
 			}
 
@@ -180,7 +181,7 @@ func BuildNeighborsFromLines(lines []string, relPath string, startLine, endLine,
 
 	var out []model.Neighbor
 	if before > 0 {
-		s := max(1, startLine-before)
+		s := utils.Max(1, startLine-before)
 		e := startLine - 1
 		if e >= s && (e-s+1) <= 30 {
 			snip := strings.Join(lines[s-1:e], "\n")
@@ -191,7 +192,7 @@ func BuildNeighborsFromLines(lines []string, relPath string, startLine, endLine,
 	}
 	if after > 0 {
 		s := endLine + 1
-		e := min(len(lines), endLine+after)
+		e := utils.Min(len(lines), endLine+after)
 		if e >= s && (e-s+1) <= 30 {
 			snip := strings.Join(lines[s-1:e], "\n")
 			if strings.TrimSpace(snip) != "" {
@@ -208,23 +209,4 @@ func isExported(name string) bool {
 	}
 	r := rune(name[0])
 	return r >= 'A' && r <= 'Z'
-}
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-//	func max(a, b int) int {
-//		if a > b {
-//			return a
-//		}
-//		return b
-//	}
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
