@@ -23,9 +23,11 @@ func main() {
 		ctxBefore      = flag.Int("context-before", 0, "Neighbor lines before function start (<=30)")
 		ctxAfter       = flag.Int("context-after", 0, "Neighbor lines after function end (<=30)")
 		excludeCSV     = flag.String("exclude", "(^|/)(vendor|third_party|\\.git|build|dist)/", "Comma-separated regex to exclude paths")
-		fieldsCSV      = flag.String("fields", "repo,commit,lang,path,symbol,signature,start_line,end_line,code,neighbors,selection", "Comma-separated output fields")
+		fieldsCSV      = flag.String("fields", "repo,commit,lang,path,symbol,signature,start_line,end_line,code,neighbors,selection,call_graph", "Comma-separated output fields")
 		debug          = flag.Bool("debug", false, "Verbose logging")
 		outPath        = flag.String("out", "", "Path to JSONL output file (optional, defaults to stdout)")
+		maxCallers     = flag.Int("max-callers", 10, "Max callers in call_graph (only if --fields includes call_graph)")
+		maxCallees     = flag.Int("max-callees", 10, "Max callees in call_graph (only if --fields includes call_graph)")
 	)
 	flag.Parse()
 
@@ -47,6 +49,8 @@ func main() {
 		ContextAfter:   *ctxAfter,
 		Debug:          *debug,
 		Fields:         scanner.ParseFields(*fieldsCSV),
+		MaxCallers:     *maxCallers,
+		MaxCallees:     *maxCallees,
 	}
 
 	records, err := scanner.Run(opts)
