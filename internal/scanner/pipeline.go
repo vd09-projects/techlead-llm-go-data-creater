@@ -4,7 +4,6 @@ import (
 	"regexp"
 	"strings"
 
-	cg "github.com/vd09-projects/techlead-llm-go-data-creater/internal/callgraph"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/model"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/utils"
 	"golang.org/x/tools/go/packages"
@@ -136,20 +135,20 @@ func Run(opts Options) ([]model.Record, error) {
 			// call_graph (native only) — only if requested via --fields
 			if opts.Fields["call_graph"] && fn.Path != "" && rec.Symbol != "" {
 				// file path the callgraph wants is the relative path (same as rec.Path)
-				res, _ := cg.Build(opts.RepoRoot, fn.Path, rec.Symbol, opts.MaxCallers, opts.MaxCallees)
-				if len(res.Callees) > 0 || len(res.Callers) > 0 {
-					rec.CallGraph = &model.CallGraph{
-						Callees:   convertEdges(res.Callees),
-						Callers:   convertEdges(res.Callers),
-						Precision: "native",
-					}
-				} else {
-					rec.CallGraph = &model.CallGraph{
-						Callees:   nil,
-						Callers:   nil,
-						Precision: "native",
-					}
+				// res, _ := cg.Build(opts.RepoRoot, fn.Path, rec.Symbol, opts.MaxCallers, opts.MaxCallees)
+				// if len(res.Callees) > 0 || len(res.Callers) > 0 {
+				// 	rec.CallGraph = &model.CallGraph{
+				// 		Callees:   convertEdges(res.Callees),
+				// 		Callers:   convertEdges(res.Callers),
+				// 		Precision: "native",
+				// 	}
+				// } else {
+				rec.CallGraph = &model.CallGraph{
+					Callees:   nil,
+					Callers:   nil,
+					Precision: "native",
 				}
+				// }
 			}
 
 			records = append(records, rec)
@@ -159,7 +158,7 @@ func Run(opts Options) ([]model.Record, error) {
 	return records, nil
 }
 
-func convertEdges(in []cg.Edge) []model.Edge {
+func convertEdges(in []model.Edge) []model.Edge {
 	out := make([]model.Edge, 0, len(in))
 	for _, e := range in {
 		out = append(out, model.Edge{Symbol: e.Symbol, Path: e.Path})

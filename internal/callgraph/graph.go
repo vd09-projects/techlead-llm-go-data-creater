@@ -1,4 +1,4 @@
-// internal/callgraph/graph.go
+// internal/callgraph/computer.go
 package callgraph
 
 import (
@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"go/token"
 
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/model"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	staticcg "golang.org/x/tools/go/callgraph/static"
@@ -17,184 +19,206 @@ import (
 	"golang.org/x/tools/go/ssa/ssautil"
 )
 
-// Edge is a compact (symbol, path) pair used in JSON output.
-type Edge struct {
-	Symbol string `json:"symbol"`
-	Path   string `json:"path"`
-}
-
 // Result groups outgoing (callees) and incoming (callers) edges.
 type Result struct {
-	Callees []Edge `json:"callees"`
-	Callers []Edge `json:"callers"`
+	Callees []model.Edge `json:"callees"`
+	Callers []model.Edge `json:"callers"`
 }
 
-// Build constructs a native call graph for the module at repoRoot and returns
-// up to maxCallers/maxCallees edges for the given target (fileRel, symbol).
-// It takes the UNION of the Static and CHA call graphs to capture both direct
-// calls and interface/virtual dispatch.
-//
-// - repoRoot: absolute or relative path to the repo/module root (must contain go.mod)
-// - fileRel : function file path relative to repoRoot (posix-style is fine)
-// - symbol  : "Func" or "(Type).Method" or "(*Type).Method"
-func Build(repoRoot, fileRel, symbol string, maxCallers, maxCallees int) (Result, error) {
-	absRepo, _ := filepath.Abs(repoRoot)
-	targetFileRel := filepath.ToSlash(fileRel)
+// --------- Public interface to enable reuse & testability ---------
 
-	// Use current environment (PATH, GOOS, GOARCH, GOTOOLCHAIN, etc.) and
-	// only neutralize workspace/flag interference.
-	env := os.Environ()
-	env = append(env, "GOWORK=off", "GOFLAGS=")
+// Computer builds/holds a callgraph for a repo and answers edge queries.
+// Contract: Init must be called before Edges. Implementations must be safe
+// for repeated Edges calls after a successful Init.
+type Computer interface {
+	Init(repoRoot string) error
+	GetCallers(fileRel, symbol string, maxCallers int) ([]model.Edge, error)
+	GetCallees(fileRel, symbol string, maxCallees int) ([]model.Edge, error)
+}
 
-	cfg := &packages.Config{
-		Mode:  packages.LoadAllSyntax,
-		Dir:   absRepo,
-		Env:   env,
-		Tests: false,
-	}
+// --------- Native (Static ∪ CHA) implementation ---------
 
-	// Must be a module; if no go.mod, return empty (valid) result.
-	if _, err := os.Stat(filepath.Join(absRepo, "go.mod")); err != nil {
-		return Result{}, nil
-	}
+type fnKey struct{ Recv, Name, File string }
 
-	pkgs, err := packages.Load(cfg, "./...")
-	if err != nil || len(pkgs) == 0 {
-		return Result{}, nil
-	}
-	_ = packages.PrintErrors(pkgs)
+type nativeComputer struct {
+	once sync.Once
+	err  error
 
-	// Build SSA program.
-	prog, _ := ssautil.AllPackages(pkgs, ssa.BuilderMode(0))
-	if prog == nil {
-		return Result{}, nil
-	}
-	prog.Build()
-	fset := prog.Fset
-	if fset == nil {
-		return Result{}, nil
-	}
+	// immutable after Init
+	repoRoot string
+	absRepo  string
+	prog     *ssa.Program
+	fset     *token.FileSet
 
-	// Build both graphs and take their union.
-	staticCG := staticcg.CallGraph(prog)
-	chaCG := cha.CallGraph(prog)
-	if chaCG != nil {
-		chaCG.DeleteSyntheticNodes()
-	}
+	// indexes for fast lookup (populated once)
+	fnByKey        map[fnKey]*ssa.Function
+	nodeStaticByFn map[*ssa.Function]*callgraph.Node
+	nodeCHAByFn    map[*ssa.Function]*callgraph.Node
+}
 
-	// Index: (name, file) -> function; function -> node (static/CHA).
-	type key struct{ Name, File string }
-	fnByKey := map[key]*ssa.Function{}
-	nodeStaticByFn := map[*ssa.Function]*callgraph.Node{}
-	nodeCHAByFn := map[*ssa.Function]*callgraph.Node{}
+// NewNativeComputer returns a Computer that builds Static and CHA graphs once.
+func NewNativeComputer() Computer { return &nativeComputer{} }
 
-	collect := func(cg *callgraph.Graph, store map[*ssa.Function]*callgraph.Node) {
-		if cg == nil {
+func (c *nativeComputer) Init(repoRoot string) error {
+	c.once.Do(func() {
+		c.repoRoot = repoRoot
+		c.absRepo, _ = filepath.Abs(repoRoot)
+
+		if !c.hasGoMod() {
+			// no module → permissible empty graph
 			return
 		}
-		for fn, node := range cg.Nodes {
-			if fn == nil || node == nil {
-				continue
-			}
-			store[fn] = node
-			file := fileFor(fset, fn)
-			if file == "" {
-				continue
-			}
-			fnByKey[key{fn.Name(), filepath.ToSlash(file)}] = fn
-		}
-	}
-	collect(staticCG, nodeStaticByFn)
-	collect(chaCG, nodeCHAByFn)
 
-	// Resolve the target function by decreasing strictness.
+		pkgs := c.loadPackages()
+		if len(pkgs) == 0 {
+			return
+		}
+
+		prog, fset := c.buildSSA(pkgs)
+		if prog == nil || fset == nil {
+			return
+		}
+		c.prog, c.fset = prog, fset
+
+		staticCG := staticcg.CallGraph(prog)
+		chaCG := cha.CallGraph(prog)
+		if chaCG != nil {
+			chaCG.DeleteSyntheticNodes()
+		}
+
+		c.fnByKey = map[fnKey]*ssa.Function{}
+		c.nodeStaticByFn = map[*ssa.Function]*callgraph.Node{}
+		c.nodeCHAByFn = map[*ssa.Function]*callgraph.Node{}
+
+		collect := func(cg *callgraph.Graph, store map[*ssa.Function]*callgraph.Node) {
+			if cg == nil {
+				return
+			}
+			for fn, node := range cg.Nodes {
+				if fn == nil || node == nil {
+					continue
+				}
+				store[fn] = node
+				if file := fileFor(c.fset, fn); file != "" {
+					c.fnByKey[fnKey{
+						Recv: c.recvOf(fn),
+						Name: fn.Name(),
+						File: filepath.ToSlash(file),
+					}] = fn
+				}
+			}
+		}
+		collect(staticCG, c.nodeStaticByFn)
+		collect(chaCG, c.nodeCHAByFn)
+	})
+	return c.err
+}
+
+// GetCallees returns up to maxCallees unique callees for the given (fileRel, symbol).
+func (c *nativeComputer) GetCallees(fileRel, symbol string, maxCallees int) ([]model.Edge, error) {
+	nodeS, nodeC := c.getTargetNodes(fileRel, symbol)
+	if nodeS == nil && nodeC == nil {
+		return nil, nil
+	}
+	out := c.unionOutEdges(nodeS, nodeC, maxCallees)
+	sortEdges(out)
+	return dedup(out), nil
+}
+
+// GetCallers returns up to maxCallers unique callers for the given (fileRel, symbol).
+func (c *nativeComputer) GetCallers(fileRel, symbol string, maxCallers int) ([]model.Edge, error) {
+	nodeS, nodeC := c.getTargetNodes(fileRel, symbol)
+	if nodeS == nil && nodeC == nil {
+		return nil, nil
+	}
+	out := c.unionInEdges(nodeS, nodeC, maxCallers)
+	sortEdges(out)
+	return dedup(out), nil
+}
+
+// getTargetNodes centralizes target resolution and node lookup.
+// Returns the static and CHA nodes for the target (either may be nil).
+func (c *nativeComputer) getTargetNodes(fileRel, symbol string) (nodeS, nodeC *callgraph.Node) {
+	// If Init never ran or repo had no go.mod, we simply return nils.
+	if c.fset == nil {
+		return nil, nil
+	}
+	target := c.resolveTarget(filepath.ToSlash(fileRel), symbol)
+	if target == nil {
+		return nil, nil
+	}
+	return c.nodeStaticByFn[target], c.nodeCHAByFn[target]
+}
+
+// --------- internal helpers (nativeComputer methods) ---------
+
+func (c *nativeComputer) hasGoMod() bool {
+	_, err := os.Stat(filepath.Join(c.absRepo, "go.mod"))
+	return err == nil
+}
+
+func (c *nativeComputer) neutralEnv() []string {
+	env := os.Environ()
+	return append(env, "GOWORK=off", "GOFLAGS=")
+}
+
+func (c *nativeComputer) loadPackages() []*packages.Package {
+	cfg := &packages.Config{
+		Mode:  packages.LoadAllSyntax,
+		Dir:   c.absRepo,
+		Env:   c.neutralEnv(),
+		Tests: false,
+	}
+	pkgs, _ := packages.Load(cfg, "./...")
+	_ = packages.PrintErrors(pkgs)
+	return pkgs
+}
+
+func (c *nativeComputer) buildSSA(pkgs []*packages.Package) (*ssa.Program, *token.FileSet) {
+	prog, _ := ssautil.AllPackages(pkgs, ssa.BuilderMode(0))
+	if prog == nil {
+		return nil, nil
+	}
+	prog.Build()
+	return prog, prog.Fset
+}
+
+func (c *nativeComputer) recvOf(fn *ssa.Function) string {
+	if fn == nil || fn.Signature == nil || fn.Signature.Recv() == nil {
+		return ""
+	}
+	return recvString(fn.Signature.Recv().Type())
+}
+
+func (c *nativeComputer) resolveTarget(targetFileRel, symbol string) *ssa.Function {
 	wantRecv, wantName := ParseInputSymbol(symbol)
-	fnRecv := func(fn *ssa.Function) string {
-		if fn == nil || fn.Signature == nil || fn.Signature.Recv() == nil {
-			return ""
-		}
-		return recvString(fn.Signature.Recv().Type())
-	}
 
-	var target *ssa.Function
 	// 1) name + recv + file suffix
 	if wantRecv != "" {
-		for k, fn := range fnByKey {
+		for k, fn := range c.fnByKey {
 			if k.Name != wantName || !strings.HasSuffix(k.File, targetFileRel) {
 				continue
 			}
-			if fnRecv(fn) == wantRecv {
-				target = fn
-				break
+			if k.Recv == wantRecv {
+				return fn
 			}
 		}
 	}
-	// 2) name + recv (any file)
-	if target == nil && wantRecv != "" {
-		for k, fn := range fnByKey {
-			if k.Name == wantName && fnRecv(fn) == wantRecv {
-				target = fn
-				break
+
+	// 2) name + file suffix (functions only)
+	if wantRecv == "" {
+		for k, fn := range c.fnByKey {
+			if k.Name == wantName && strings.HasSuffix(k.File, targetFileRel) && k.Recv == "" {
+				return fn
 			}
 		}
 	}
-	// 3) name + file suffix
-	if target == nil {
-		for k, fn := range fnByKey {
-			if k.Name == wantName && strings.HasSuffix(k.File, targetFileRel) {
-				target = fn
-				break
-			}
-		}
-	}
-	// 4) name only
-	if target == nil {
-		for k, fn := range fnByKey {
-			if k.Name == wantName {
-				target = fn
-				break
-			}
-		}
-	}
-	if target == nil {
-		return Result{}, nil
-	}
-
-	// Nodes for the target (may exist in only one graph).
-	nodeS := nodeStaticByFn[target]
-	nodeC := nodeCHAByFn[target]
-	if nodeS == nil && nodeC == nil {
-		return Result{}, nil
-	}
-
-	// Merge outgoing/incoming edges from both graphs.
-	callees := unionOutEdges(nodeS, nodeC, fset, absRepo, maxCallees)
-	callers := unionInEdges(nodeS, nodeC, fset, absRepo, maxCallers)
-
-	// Deterministic order + dedup.
-	sort.Slice(callees, func(i, j int) bool {
-		if callees[i].Symbol == callees[j].Symbol {
-			return callees[i].Path < callees[j].Path
-		}
-		return callees[i].Symbol < callees[j].Symbol
-	})
-	sort.Slice(callers, func(i, j int) bool {
-		if callers[i].Symbol == callers[j].Symbol {
-			return callers[i].Path < callers[j].Path
-		}
-		return callers[i].Symbol < callers[j].Symbol
-	})
-
-	return Result{
-		Callees: dedup(callees),
-		Callers: dedup(callers),
-	}, nil
+	return nil
 }
 
-// unionOutEdges returns up to capN unique callees from the union of static and CHA nodes.
-func unionOutEdges(ns, nc *callgraph.Node, fset *token.FileSet, repo string, capN int) []Edge {
+func (c *nativeComputer) unionOutEdges(ns, nc *callgraph.Node, capN int) []model.Edge {
 	seen := map[string]bool{}
-	var out []Edge
+	var out []model.Edge
 
 	add := func(edges []*callgraph.Edge) {
 		for _, e := range edges {
@@ -202,7 +226,7 @@ func unionOutEdges(ns, nc *callgraph.Node, fset *token.FileSet, repo string, cap
 				continue
 			}
 			fn := e.Callee.Func
-			file := fileFor(fset, fn)
+			file := fileFor(c.fset, fn)
 			if file == "" {
 				continue
 			}
@@ -212,7 +236,7 @@ func unionOutEdges(ns, nc *callgraph.Node, fset *token.FileSet, repo string, cap
 				continue
 			}
 			seen[k] = true
-			out = append(out, Edge{Symbol: label, Path: rel(repo, file)})
+			out = append(out, model.Edge{Symbol: label, Path: rel(c.absRepo, file)})
 			if len(out) >= capN {
 				return
 			}
@@ -228,10 +252,9 @@ func unionOutEdges(ns, nc *callgraph.Node, fset *token.FileSet, repo string, cap
 	return out
 }
 
-// unionInEdges returns up to capN unique callers from the union of static and CHA nodes.
-func unionInEdges(ns, nc *callgraph.Node, fset *token.FileSet, repo string, capN int) []Edge {
+func (c *nativeComputer) unionInEdges(ns, nc *callgraph.Node, capN int) []model.Edge {
 	seen := map[string]bool{}
-	var out []Edge
+	var out []model.Edge
 
 	add := func(edges []*callgraph.Edge) {
 		for _, e := range edges {
@@ -239,7 +262,7 @@ func unionInEdges(ns, nc *callgraph.Node, fset *token.FileSet, repo string, capN
 				continue
 			}
 			fn := e.Caller.Func
-			file := fileFor(fset, fn)
+			file := fileFor(c.fset, fn)
 			if file == "" {
 				continue
 			}
@@ -249,7 +272,7 @@ func unionInEdges(ns, nc *callgraph.Node, fset *token.FileSet, repo string, capN
 				continue
 			}
 			seen[k] = true
-			out = append(out, Edge{Symbol: label, Path: rel(repo, file)})
+			out = append(out, model.Edge{Symbol: label, Path: rel(c.absRepo, file)})
 			if len(out) >= capN {
 				return
 			}
@@ -265,9 +288,20 @@ func unionInEdges(ns, nc *callgraph.Node, fset *token.FileSet, repo string, capN
 	return out
 }
 
-func dedup(in []Edge) []Edge {
+// shared helpers (not tied to receiver)
+
+func sortEdges(es []model.Edge) {
+	sort.Slice(es, func(i, j int) bool {
+		if es[i].Symbol == es[j].Symbol {
+			return es[i].Path < es[j].Path
+		}
+		return es[i].Symbol < es[j].Symbol
+	})
+}
+
+func dedup(in []model.Edge) []model.Edge {
 	seen := map[string]bool{}
-	out := make([]Edge, 0, len(in))
+	out := make([]model.Edge, 0, len(in))
 	for _, e := range in {
 		k := e.Symbol + "|" + e.Path
 		if seen[k] {
