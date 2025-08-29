@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"strings"
 
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/emit"
 	baseenrichers "github.com/vd09-projects/techlead-llm-go-data-creater/internal/enrichers"
@@ -46,7 +47,7 @@ func main() {
 	}
 
 	// Compose enrichers according to --fields
-	fields := scanner.ParseFields(*fieldsCSV)
+	fields := ParseFields(*fieldsCSV)
 
 	// build a slice of the correct interface type
 	ens := make([]baseenrichers.Enricher, 0, 3)
@@ -87,4 +88,15 @@ func main() {
 	if err := pl.Run(context.Background(), opts); err != nil {
 		log.Fatalf("scan error: %v", err)
 	}
+}
+
+func ParseFields(csv string) map[string]bool {
+	m := make(map[string]bool)
+	for _, f := range strings.Split(csv, ",") {
+		f = strings.TrimSpace(f)
+		if f != "" {
+			m[f] = true
+		}
+	}
+	return m
 }

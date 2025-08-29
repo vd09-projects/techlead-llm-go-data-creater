@@ -1,12 +1,12 @@
 package selection
 
 import (
+	"go/ast"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/core"
-	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/scanner"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/utils"
 	"golang.org/x/tools/go/packages"
 )
@@ -30,8 +30,51 @@ func (ds *DefaultStrategy) precompute() {
 		Dir:  ds.repoRoot,
 	}
 	pkgs, _ := packages.Load(cfg, "./...")
-	nameToFanin := scanner.CountFanIn(pkgs)
+	nameToFanin := ds.countFanIn(pkgs)
 	ds.nameToFanin = nameToFanin
+}
+
+// CountFanIn returns a map of simple function name -> number of call sites across pkgs.
+func (ds *DefaultStrategy) countFanIn(pkgs []*packages.Package) map[string]int {
+	out := make(map[string]int)
+	for _, p := range pkgs {
+		for _, f := range p.Syntax {
+			ast.Inspect(f, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				switch fun := call.Fun.(type) {
+				case *ast.Ident:
+					if fun.Name != "" {
+						out[fun.Name]++
+					}
+				case *ast.SelectorExpr:
+					if fun.Sel != nil && fun.Sel.Name != "" {
+						out[fun.Sel.Name]++
+					}
+				}
+				return true
+			})
+		}
+	}
+	// light normalization: ignore obviously unhelpful names
+	for k := range out {
+		if ds.isKeywordish(k) {
+			delete(out, k)
+		}
+	}
+	return out
+}
+
+func (ds *DefaultStrategy) isKeywordish(s string) bool {
+	s = strings.ToLower(s)
+	switch s {
+	case "new", "make", "len", "cap", "append", "copy", "delete", "close", "panic", "recover":
+		return true
+	default:
+		return false
+	}
 }
 
 func (ds *DefaultStrategy) Visibility(path string, fn *core.FunctionNode) string {
