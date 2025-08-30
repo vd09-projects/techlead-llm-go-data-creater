@@ -32,6 +32,9 @@ func ToRecords(repo *RepoNode, repoName, commitHash, lang string) []model.Record
 			if v, ok := fn.Aspects[AspectCallGraph].(*model.CallGraph); ok {
 				rec.CallGraph = v
 			}
+			if v, ok := fn.Aspects[AspectCtxRefs].([]*model.ContextRef); ok && len(v) > 0 {
+				rec.ContextRefs = v
+			}
 			out = append(out, rec)
 		}
 	}

@@ -6,6 +6,7 @@ const (
 	AspectNeighbors AspectKind = "neighbors"
 	AspectSelection AspectKind = "selection"
 	AspectCallGraph AspectKind = "call_graph"
+	AspectCtxRefs   AspectKind = "context_refs"
 )
 
 type RepoNode struct {
