@@ -6,7 +6,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/emit"
 	baseenrichers "github.com/vd09-projects/techlead-llm-go-data-creater/internal/enrichers"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/enrichers/callgraph"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/enrichers/contextrefs"
@@ -14,8 +13,10 @@ import (
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/enrichers/selection"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/extractor"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/gitutil"
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/model"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/pipeline"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/scanner"
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/stream"
 )
 
 func main() {
@@ -82,11 +83,12 @@ func main() {
 
 	reader := scanner.NewGoPackagesReader(*repoRoot, *excludeCSV, *debug)
 
+	je := stream.NewJSONLEmitter[model.Record](*outPath, nil, true)
 	pl := pipeline.New(
 		reader,
 		extractor.NewASTExtractor(*minFuncLines, *maxFuncLines),
 		ens,
-		emit.JSONLEmitter{},
+		je,
 	)
 
 	opts := pipeline.Options{

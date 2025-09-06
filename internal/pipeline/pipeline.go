@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/core"
-	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/emit"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/enrichers"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/extractor"
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/model"
 	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/scanner"
+	"github.com/vd09-projects/techlead-llm-go-data-creater/internal/stream"
 )
 
 type Options struct {
@@ -22,10 +23,10 @@ type Pipeline struct {
 	Reader    *scanner.GoPackagesReader
 	Extractor extractor.Extractor
 	Enrichers []enrichers.Enricher
-	Emitter   emit.Emitter
+	Emitter   stream.Emitter[model.Record]
 }
 
-func New(reader *scanner.GoPackagesReader, ex extractor.Extractor, ens []enrichers.Enricher, em emit.Emitter) *Pipeline {
+func New(reader *scanner.GoPackagesReader, ex extractor.Extractor, ens []enrichers.Enricher, em stream.Emitter[model.Record]) *Pipeline {
 	return &Pipeline{Reader: reader, Extractor: ex, Enrichers: ens, Emitter: em}
 }
 
@@ -49,5 +50,5 @@ func (p *Pipeline) Run(ctx context.Context, opts Options) error {
 
 	// flatten -> records
 	recs := core.ToRecords(repo, opts.RepoName, opts.CommitHash, opts.Lang)
-	return p.Emitter.Emit(recs, opts.OutPath)
+	return p.Emitter.Emit(recs)
 }
