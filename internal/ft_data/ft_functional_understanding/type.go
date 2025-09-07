@@ -24,6 +24,7 @@ type Conversation struct {
 	Role     string       `json:"role"`
 	Context  *BaseContext `json:"content,omitempty"`
 	Messages string       `json:"question,omitempty"`
+	Response string       `json:"response,omitempty"`
 }
 
 type FineTuneRecord struct {
