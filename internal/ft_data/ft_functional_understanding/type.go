@@ -5,25 +5,25 @@ import (
 )
 
 type BaseContext struct {
-	Repo          string           `json:"repo"`
-	Path          string           `json:"path"`
-	Symbol        string           `json:"symbol"`
-	Lines         [2]int           `json:"lines"`
-	Signature     string           `json:"signature,omitempty"`
-	RecvType      string           `json:"receiver_type,omitempty"`
-	Interfaces    []string         `json:"interfaces,omitempty"`
-	Neighbors     []model.Neighbor `json:"neighbors,omitempty"`
-	Callers       []model.Edge     `json:"callers,omitempty"`
-	Callees       []model.Edge     `json:"callees,omitempty"`
-	Notes         []string         `json:"notes,omitempty"`
-	Code          string           `json:"code,omitempty"`
+	Repo          string            `json:"repo"`
+	Path          string            `json:"path"`
+	Symbol        string            `json:"symbol"`
+	Lines         [2]int            `json:"lines"`
+	Signature     string            `json:"signature,omitempty"`
+	RecvType      string            `json:"receiver_type,omitempty"`
+	Interfaces    []string          `json:"interfaces,omitempty"`
+	Neighbors     []model.Neighbor  `json:"neighbors,omitempty"`
+	Callers       []model.Edge      `json:"callers,omitempty"`
+	Callees       []model.Edge      `json:"callees,omitempty"`
+	Notes         []string          `json:"notes,omitempty"`
+	Code          string            `json:"code,omitempty"`
 	CodeReference *model.ContextRef `json:"code_reference,omitempty"`
 }
 
 type Conversation struct {
 	Role     string       `json:"role"`
-	Context  *BaseContext `json:"context,omitempty"`
-	Messages string       `json:"messages,omitempty"`
+	Context  *BaseContext `json:"content,omitempty"`
+	Messages string       `json:"question,omitempty"`
 }
 
 type FineTuneRecord struct {
