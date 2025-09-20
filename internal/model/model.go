@@ -27,11 +27,11 @@ type CallGraph struct {
 }
 
 type ContextRef struct {
-	Path      string `json:"path"`
-	StartLine int    `json:"start_line"`
-	EndLine   int    `json:"end_line"`
-	Code      string `json:"code"`
-	Kind      string `json:"kind"`             // receiver_type | interface_method | counterpart_method | factory_constructor
+	Path      string `json:"path,omitempty"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
+	Code      string `json:"code,omitempty"`
+	Kind      string `json:"kind,omitempty"`   // receiver_type | interface_method | counterpart_method | factory_constructor
 	Symbol    string `json:"symbol,omitempty"` // optional
 	Why       string `json:"why,omitempty"`    // <=140 chars
 }

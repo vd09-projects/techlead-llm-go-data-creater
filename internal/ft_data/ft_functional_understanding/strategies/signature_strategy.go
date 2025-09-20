@@ -19,8 +19,9 @@ func (ss *SignatureStrategy) Apply(rec model.Record) []*ft.FineTuneRecord {
 		Messages: fmt.Sprintf("What is the signature of the function or method named %q?", rec.Symbol),
 	})
 	ftRecord.Conversations = append(ftRecord.Conversations, &ft.Conversation{
-		Role:     "assistant",
-		Messages: fmt.Sprintf("The signature of %q is:\n\n%s", rec.Symbol, rec.Signature),
+		Role:        "assistant",
+		Response:    fmt.Sprintf("The signature of %q is:\n\n%s", rec.Symbol, rec.Signature),
+		// MustContain: rec.Signature,
 	})
 	return []*ft.FineTuneRecord{ftRecord}
 }
@@ -31,7 +32,7 @@ func (*SignatureStrategy) GetUserContext(rec model.Record) *ft.BaseContext {
 			Repo:   rec.Repo,
 			Path:   rec.Path,
 			Symbol: rec.Symbol,
-			Lines:  [2]int{rec.StartLine, rec.EndLine},
+			Lines:  []int{rec.StartLine, rec.EndLine},
 			Code:   rec.Code,
 		}
 	return context

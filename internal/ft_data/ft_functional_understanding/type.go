@@ -5,10 +5,10 @@ import (
 )
 
 type BaseContext struct {
-	Repo          string            `json:"repo"`
-	Path          string            `json:"path"`
-	Symbol        string            `json:"symbol"`
-	Lines         [2]int            `json:"lines"`
+	Repo          string            `json:"repo,omitempty"`
+	Path          string            `json:"path,omitempty"`
+	Symbol        string            `json:"symbol,omitempty"`
+	Lines         []int             `json:"lines,omitempty"`
 	Signature     string            `json:"signature,omitempty"`
 	RecvType      string            `json:"receiver_type,omitempty"`
 	Interfaces    []string          `json:"interfaces,omitempty"`
@@ -24,11 +24,12 @@ type Conversation struct {
 	Role     string       `json:"role"`
 	Context  *BaseContext `json:"content,omitempty"`
 	Messages string       `json:"question,omitempty"`
-	Response string       `json:"response,omitempty"`
+	Response string       `json:"answer,omitempty"`
+	// MustContain string       `json:"must_contain_for_validation,omitempty"`
 }
 
 type FineTuneRecord struct {
-	Conversations []*Conversation `json:"conversations"`
+	Conversations []*Conversation `json:"messages"`
 }
 
 func NewFineTuneRecord() *FineTuneRecord {
@@ -49,3 +50,12 @@ type QuestionStrategy interface {
 	Name() string
 	Apply(rec model.Record) []*FineTuneRecord
 }
+
+type Strategies string
+
+const (
+	StrategySignature     Strategies = "signature"
+	StrategyCodePredictor Strategies = "code"
+	StrategyCallgraph     Strategies = "example_callgraph"
+	StrategyContextRefs   Strategies = "context_refs"
+)

@@ -13,17 +13,15 @@ func (cs *ContextRefsStrategy) Apply(rec model.Record) []*ft.FineTuneRecord {
 	ftRecords := []*ft.FineTuneRecord{}
 	for _, ref := range rec.ContextRefs {
 		ftRecord := ft.NewFineTuneRecord()
-		qtctx := cs.GetUserContext(rec, ref)
-		qtctx.CodeReference = nil
 		ftRecord.Conversations = append(ftRecord.Conversations, &ft.Conversation{
 			Role:     "user",
-			Context:  qtctx,
+			Context:  cs.GetUserContext(rec, ref),
 			Messages: ref.Why,
 		})
 
 		ftRecord.Conversations = append(ftRecord.Conversations, &ft.Conversation{
 			Role:    "assistant",
-			Context: cs.GetUserContext(rec, ref),
+			Context: cs.GetAssistantContext(rec, ref),
 		})
 		ftRecords = append(ftRecords, ftRecord)
 	}
@@ -37,17 +35,23 @@ func (*ContextRefsStrategy) GetUserContext(rec model.Record, ref *model.ContextR
 			Path:      rec.Path,
 			Symbol:    rec.Symbol,
 			Signature: rec.Signature,
-			Lines:     [2]int{rec.StartLine, rec.EndLine},
+			Lines:     []int{rec.StartLine, rec.EndLine},
 			Code:      rec.Code,
-			CodeReference: &model.ContextRef{
-				Path:      ref.Path,
-				StartLine: ref.StartLine,
-				EndLine:   ref.EndLine,
-				Code:      ref.Code,
-				Kind:      ref.Kind,
-				Why:       "",
-			},
 		}
+	return context
+}
+
+func (crs *ContextRefsStrategy) GetAssistantContext(rec model.Record, ref *model.ContextRef) *ft.BaseContext {
+	context := &ft.BaseContext{
+		CodeReference: &model.ContextRef{
+			Path: ref.Path,
+			// StartLine: ref.StartLine,
+			// EndLine:   ref.EndLine,
+			Code: ref.Code,
+			Kind: ref.Kind,
+			// Why:       "",
+		},
+	}
 	return context
 }
 

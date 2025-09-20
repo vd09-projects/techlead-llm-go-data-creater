@@ -17,9 +17,9 @@ func (cs *CallgraphStrategy) Apply(rec model.Record) []*ft.FineTuneRecord {
 	if len(rec.CallGraph.Callers) != 0 {
 		ftRecords = append(ftRecords, cs.getCallersFineTuneRecord(rec))
 	}
-	if len(rec.CallGraph.Callees) != 0 {
-		ftRecords = append(ftRecords, cs.getCalleesFineTuneRecord(rec))
-	}
+	// if len(rec.CallGraph.Callees) != 0 {
+	// 	ftRecords = append(ftRecords, cs.getCalleesFineTuneRecord(rec))
+	// }
 	return ftRecords
 }
 
@@ -28,11 +28,14 @@ func (cs *CallgraphStrategy) getCalleesFineTuneRecord(rec model.Record) *ft.Fine
 	ftRecord.Conversations = append(ftRecord.Conversations, &ft.Conversation{
 		Role:     "user",
 		Context:  cs.getUserCalleesContext(rec),
-		Messages: fmt.Sprintf("Can you list upto five example callers of %q?", rec.Symbol),
+		Messages: fmt.Sprintf("Can you list upto five example callees of %q?", rec.Symbol),
 	})
 
-	context := cs.getUserCalleesContext(rec)
-	context.Callees = rec.CallGraph.Callees[:utils.Min(5, len(rec.CallGraph.Callees))]
+	context := &ft.BaseContext{
+		Callees: rec.CallGraph.Callees[:utils.Min(5, len(rec.CallGraph.Callees))],
+	}
+	// context := cs.getUserCalleesContext(rec)
+	// context.Callees = rec.CallGraph.Callees[:utils.Min(5, len(rec.CallGraph.Callees))]
 	ftRecord.Conversations = append(ftRecord.Conversations, &ft.Conversation{
 		Role:    "assistant",
 		Context: context,
@@ -48,8 +51,11 @@ func (cs *CallgraphStrategy) getCallersFineTuneRecord(rec model.Record) *ft.Fine
 		Messages: fmt.Sprintf("Can you list upto five example callers of %q?", rec.Symbol),
 	})
 
-	context := cs.getUserCallersContext(rec)
-	context.Callers = rec.CallGraph.Callers[:utils.Min(5, len(rec.CallGraph.Callers))]
+	// context := cs.getUserCallersContext(rec)
+	// context.Callers = rec.CallGraph.Callers[:utils.Min(5, len(rec.CallGraph.Callers))]
+	context := &ft.BaseContext{
+		Callers: rec.CallGraph.Callers[:utils.Min(5, len(rec.CallGraph.Callers))],
+	}
 	ftRecord.Conversations = append(ftRecord.Conversations, &ft.Conversation{
 		Role:    "assistant",
 		Context: context,
@@ -64,7 +70,8 @@ func (*CallgraphStrategy) getUserCallersContext(rec model.Record) *ft.BaseContex
 			Path:      rec.Path,
 			Symbol:    rec.Symbol,
 			Signature: rec.Signature,
-			Lines:     [2]int{rec.StartLine, rec.EndLine},
+			Lines:     []int{rec.StartLine, rec.EndLine},
+			Code:      rec.Code,
 		}
 	return context
 }
@@ -76,7 +83,7 @@ func (*CallgraphStrategy) getUserCalleesContext(rec model.Record) *ft.BaseContex
 			Path:      rec.Path,
 			Symbol:    rec.Symbol,
 			Signature: rec.Signature,
-			Lines:     [2]int{rec.StartLine, rec.EndLine},
+			Lines:     []int{rec.StartLine, rec.EndLine},
 			Code:      rec.Code,
 		}
 	return context
